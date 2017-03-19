@@ -10,7 +10,7 @@ Package.registerBuildPlugin({
   name: 'pug-compiler',
   use: [
     'urigo:static-html-compiler@0.1.8',
-    'ecmascript',
+    'ecmascript@0.2.0',
   ],
   sources: [
     'pug-compiler.js',
