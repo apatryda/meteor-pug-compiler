@@ -1,6 +1,6 @@
 Package.describe({
   name: 'apatryda:pug-compiler',
-  version: '0.0.4',
+  version: '0.1.0',
   summary: 'Meteor plugin for importing Pug templates',
   git: 'https://github.com/apatryda/meteor-pug-compiler.git',
   documentation: 'README.md'
@@ -9,13 +9,15 @@ Package.describe({
 Package.registerBuildPlugin({
   name: 'pug-compiler',
   use: [
-    'urigo:static-html-compiler@1.0.0',
+    'babel-compiler@7.0.0',
+    'caching-compiler@1.2.0',
     'ecmascript@0.11.1',
   ],
   sources: [
     'pug-compiler.js',
   ],
   npmDependencies: {
+    'cheerio': '0.22.0',
     'pug': '2.0.3',
   },
 });

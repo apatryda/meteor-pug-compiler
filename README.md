@@ -12,6 +12,9 @@ meteor add apatryda:pug-compiler
 
 ```js
 import example from './example.pug';
+const locals = {
+  name: 'Artur',
+};
 
-console.log('example.pug rendered as a HTML string:', example);
+console.log('example.pug rendered as a HTML string:', example(locals));
 ```
