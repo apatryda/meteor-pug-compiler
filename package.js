@@ -9,9 +9,9 @@ Package.describe({
 Package.registerBuildPlugin({
   name: 'pug-compiler',
   use: [
-    'babel-compiler',
-    'caching-compiler',
-    'ecmascript',
+    'babel-compiler@7.0.0',
+    'caching-compiler@1.1.9',
+    'ecmascript@0.10.0',
   ],
   sources: [
     'pug-compiler.js',
