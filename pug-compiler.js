@@ -20,7 +20,7 @@ class PugCompiler extends CachingCompiler {
   compileResultSize(compileResult) {
     return compileResult.static
       ? compileResult.static.head.length + compileResult.static.body.length
-      : compileResult.dynamic.length
+      : compileResult.code.length
     ;
   }
 
@@ -51,12 +51,16 @@ class PugCompiler extends CachingCompiler {
     } catch (error) {}
 
     const compiledSource = pug.compileClient(source, options);
-    const moduleSource = `\
-${compiledSource}
-export default template;
-`
-    ;
-    return { dynamic: Babel.compile(moduleSource).code };
+    const moduleSource = `${compiledSource};export default template;`;
+
+    const babelOptions = {
+      ...Babel.getDefaultOptions(),
+      ast: false,
+      filename: inputFile.getBasename(),
+      sourceMaps: false,
+    };
+    const { code } = Babel.compile(moduleSource, babelOptions);
+    return { code };
   }
 
   addCompileResult(inputFile, compileResult) {
@@ -95,7 +99,7 @@ Meteor.startup(function() {
     } else {
       inputFile.addJavaScript({
         path: inputFile.getPathInPackage(),
-        data: compileResult.dynamic,
+        data: compileResult.code,
         hash: inputFile.getSourceHash(),
         lazy: true,
       });
