@@ -2,15 +2,16 @@ import $ from 'cheerio';
 import * as pug from 'pug';
 import { CachingCompiler } from 'meteor/caching-compiler';
 
+const { PUG_COMPILER_DEFAULT_DOCTYPE = 'html' } = process.env;
+const hiddenDoctypeRE = /^\/\/- doctype[ \t]+(.+)(?:[\n\r]|$)/;
 const doctypeRE = /^doctype[ \t]/m;
 
 class PugCompiler extends CachingCompiler {
-  constructor({ doctype = 'html' } = {}) {
+  constructor() {
     super({
       compilerName: 'pug-compiler',
       defaultCacheSize: 1024*1024*10,
     });
-    this.doctype = doctype;
   }
 
   getCacheKey(inputFile) {
@@ -18,92 +19,93 @@ class PugCompiler extends CachingCompiler {
   }
 
   compileResultSize(compileResult) {
-    return compileResult.static
-      ? compileResult.static.head.length + compileResult.static.body.length
-      : compileResult.code.length
-    ;
+    return compileResult.dynamic.length;
   }
 
   compileOneFile(inputFile) {
     const source = inputFile.getContentsAsString();
-    const options = doctypeRE.test(source)
-      ? {}
-      : { doctype: this.doctype }
-    ;
-    const compiled = pug.compile(source, options);
+    const pugOptions = {};
+    const hasDoctype = doctypeRE.test(source);
 
-    try {
-      const rendered = compiled({});
-      const $contents = $(rendered);
-      if ($contents.closest('head,body').length) {
-        const $head = $contents.closest('head');
-        const $body = $contents.closest('body');
-        return { static: {
-          head: {
-            contents: $head.html() || '',
-          },
-          body: {
-            contents: $body.html() || '',
-            attrs: $body[0] ? $body[0].attribs : undefined,
-          },
-        } };
+    if (!hasDoctype) {
+      const hiddenDoctypeMatch = hiddenDoctypeRE.exec(source);
+      pugOptions.doctype = hiddenDoctypeMatch
+        ? hiddenDoctypeMatch[1]
+        : PUG_COMPILER_DEFAULT_DOCTYPE
+      ;
+    }
+
+    const compiledSource = pug.compileClient(source, pugOptions);
+    const dynamic = `${compiledSource};module.exports = template;`;
+
+    const path = inputFile.getPathInPackage();
+    const splitPath = path.split('/');
+
+    if (!splitPath.includes('imports')) {
+      try {
+        const compiled = pug.compile(source, pugOptions);
+        const rendered = compiled({});
+        const $contents = $(rendered);
+        if ($contents.closest('head,body').length) {
+          const $head = $contents.closest('head');
+          const $body = $contents.closest('body');
+          return {
+            dynamic,
+            static: {
+              head: {
+                contents: $head.html() || '',
+              },
+              body: {
+                contents: $body.html() || '',
+                attrs: $body[0] ? $body[0].attribs : undefined,
+              },
+            },
+          };
+        }
+      } catch (error) {
+        console.warn(`Problems processing seemingly static template ${path}`, error.stack || error);
       }
-    } catch (error) {}
+    }
 
-    const compiledSource = pug.compileClient(source, options);
-    const moduleSource = `${compiledSource};export default template;`;
-
-    const babelOptions = {
-      ...Babel.getDefaultOptions(),
-      ast: false,
-      filename: inputFile.getBasename(),
-      sourceMaps: false,
-    };
-    const { code } = Babel.compile(moduleSource, babelOptions);
-    return { code };
+    return { dynamic };
   }
 
   addCompileResult(inputFile, compileResult) {
-    if (compileResult.static) {
+    const arch = inputFile.getArch();
+    const hash = inputFile.getSourceHash();
+    const path = inputFile.getPathInPackage();
+
+    let data = compileResult.dynamic;
+    let lazy = true;
+
+    if (arch.startsWith('web.') && compileResult.static) {
       inputFile.addHtml({
-        section: 'head',
         data: compileResult.static.head.contents,
-        hash: inputFile.getSourceHash(),
+        section: 'head',
       });
 
       inputFile.addHtml({
-        section: 'body',
         data: compileResult.static.body.contents,
-        hash: inputFile.getSourceHash(),
+        section: 'body',
       });
 
       if (compileResult.static.body.attrs) {
-        const packageName = inputFile.getPackageName();
-        const packagePrefix = packageName ? `packages/${packageName}/` : '';
-        const pathInPackage = inputFile.getPathInPackage()
         const stringifiedAttrs = JSON.stringify(compileResult.static.body.attrs);
-        inputFile.addJavaScript({
-          path: `${packagePrefix}${pathInPackage}.js`,
-          data: `\
+        data = `\
 Meteor.startup(function() {
   var attrs = ${stringifiedAttrs};
   for (var prop in attrs) {
     document.body.setAttribute(prop, attrs[prop]);
   }
 });
+${compileResult.dynamic}
 `
-          ,
-          hash: inputFile.getSourceHash(),
-        });
+        ;
+        lazy = false;
       }
-    } else {
-      inputFile.addJavaScript({
-        path: inputFile.getPathInPackage(),
-        data: compileResult.code,
-        hash: inputFile.getSourceHash(),
-        lazy: true,
-      });
     }
+
+    inputFile.addJavaScript({ data, hash, lazy, path });
   }
 }
 
